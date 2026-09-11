@@ -78,8 +78,7 @@ class IncomeViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        # Admins see all income, normal users see only their own.
-        queryset = Income.objects.all() if user.role == 'ADMIN' else Income.objects.filter(user=user)
+        queryset = Income.objects.filter(user=user)
 
         # Filters
         source = self.request.query_params.get('source')
@@ -125,7 +124,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Expense.objects.all() if user.role == 'ADMIN' else Expense.objects.filter(user=user)
+        queryset = Expense.objects.filter(user=user)
 
         # Filters
         category = self.request.query_params.get('category')
@@ -222,7 +221,7 @@ class BudgetViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Budget.objects.all() if user.role == 'ADMIN' else Budget.objects.filter(user=user)
+        queryset = Budget.objects.filter(user=user)
         
         month = self.request.query_params.get('month')
         year = self.request.query_params.get('year')
@@ -298,7 +297,7 @@ class SavingsGoalViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = SavingsGoal.objects.all() if user.role == 'ADMIN' else SavingsGoal.objects.filter(user=user)
+        queryset = SavingsGoal.objects.filter(user=user)
         return queryset.order_by('deadline')
 
     def perform_create(self, serializer):
@@ -337,7 +336,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Subscription.objects.all() if user.role == 'ADMIN' else Subscription.objects.filter(user=user)
+        queryset = Subscription.objects.filter(user=user)
         return queryset.order_by('renewal_date')
 
     def perform_create(self, serializer):
