@@ -20,23 +20,46 @@ class DashboardAnalyticsView(views.APIView):
 
     def get(self, request):
         user = request.user
+        
+        # Parse query params
+        month_param = request.query_params.get('month')
+        year_param = request.query_params.get('year')
+        start_date_param = request.query_params.get('start_date')
+        end_date_param = request.query_params.get('end_date')
+
         now = timezone.now()
-        current_month = now.month
-        current_year = now.year
+        
+        # Default to current month/year if nothing provided
+        current_month = int(month_param) if month_param else now.month
+        current_year = int(year_param) if year_param else now.year
+        
+        if start_date_param and end_date_param:
+            try:
+                start_date_filter = datetime.strptime(start_date_param, '%Y-%m-%d').date()
+                end_date_filter = datetime.strptime(end_date_param, '%Y-%m-%d').date()
+            except ValueError:
+                start_date_filter = now.replace(day=1).date()
+                end_date_filter = now.date()
+        else:
+            # First and last day of the selected month/year
+            import calendar
+            start_date_filter = datetime(current_year, current_month, 1).date()
+            last_day = calendar.monthrange(current_year, current_month)[1]
+            end_date_filter = datetime(current_year, current_month, last_day).date()
 
         # Start of current week (assuming Monday is start of week)
         start_of_week = (now - timedelta(days=now.weekday())).date()
         start_of_month = now.replace(day=1).date()
 
-        # Cumulative Metrics
+        # Cumulative Metrics (Lifetime)
         total_income = Income.objects.filter(user=user).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
         total_expense = Expense.objects.filter(user=user).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
         remaining_budget = total_income - total_expense
         total_savings = SavingsGoal.objects.filter(user=user).aggregate(total=Sum('current_amount'))['total'] or Decimal('0.00')
 
-        # Spending limits
+        # Spending limits based on filters
         current_month_spending = Expense.objects.filter(
-            user=user, date__month=current_month, date__year=current_year
+            user=user, date__gte=start_date_filter, date__lte=end_date_filter
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
 
         current_week_spending = Expense.objects.filter(
@@ -75,7 +98,7 @@ class DashboardAnalyticsView(views.APIView):
         total_month_spent = float(current_month_spending) or 1.0 # avoid div by zero
         for cat in categories:
             cat_spent = Expense.objects.filter(
-                user=user, category=cat, date__month=current_month, date__year=current_year
+                user=user, category=cat, date__gte=start_date_filter, date__lte=end_date_filter
             ).aggregate(total=Sum('amount'))['total'] or 0
             if cat_spent > 0:
                 category_spending.append({
@@ -161,16 +184,35 @@ class SmartInsightsView(views.APIView):
 
     def get(self, request):
         user = request.user
+        
+        month_param = request.query_params.get('month')
+        year_param = request.query_params.get('year')
+        start_date_param = request.query_params.get('start_date')
+        end_date_param = request.query_params.get('end_date')
+
         now = timezone.now()
-        current_month = now.month
-        current_year = now.year
+        current_month = int(month_param) if month_param else now.month
+        current_year = int(year_param) if year_param else now.year
+        
+        if start_date_param and end_date_param:
+            try:
+                start_date_filter = datetime.strptime(start_date_param, '%Y-%m-%d').date()
+                end_date_filter = datetime.strptime(end_date_param, '%Y-%m-%d').date()
+            except ValueError:
+                start_date_filter = now.replace(day=1).date()
+                end_date_filter = now.date()
+        else:
+            import calendar
+            start_date_filter = datetime(current_year, current_month, 1).date()
+            last_day = calendar.monthrange(current_year, current_month)[1]
+            end_date_filter = datetime(current_year, current_month, last_day).date()
 
         # 1. Delta vs last month
         last_month = current_month - 1 if current_month > 1 else 12
         last_year = current_year if current_month > 1 else current_year - 1
 
         this_month_spent = Expense.objects.filter(
-            user=user, date__month=current_month, date__year=current_year
+            user=user, date__gte=start_date_filter, date__lte=end_date_filter
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
 
         last_month_spent = Expense.objects.filter(
@@ -192,7 +234,7 @@ class SmartInsightsView(views.APIView):
         categories = Category.objects.filter(Q(is_default=True) | Q(user=user))
         for cat in categories:
             cat_spent = Expense.objects.filter(
-                user=user, category=cat, date__month=current_month, date__year=current_year
+                user=user, category=cat, date__gte=start_date_filter, date__lte=end_date_filter
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
             if cat_spent > highest_cat_spent:
                 highest_cat_spent = cat_spent
@@ -204,7 +246,7 @@ class SmartInsightsView(views.APIView):
 
         # 4. Savings rate
         this_month_income = Income.objects.filter(
-            user=user, date__month=current_month, date__year=current_year
+            user=user, date__gte=start_date_filter, date__lte=end_date_filter
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
         
         savings_rate = 0.0
@@ -214,10 +256,10 @@ class SmartInsightsView(views.APIView):
 
         # 5. Budget risks
         risks = []
-        budgets = Budget.objects.filter(user=user, month=current_month, year=current_year, budget_type=Budget.CATEGORY)
+        budgets = Budget.objects.filter(user=user, month=current_month, year=current_year, budget_type=Budget.CATEGORY) # budgets are monthly so this stays
         for b in budgets:
             actual = Expense.objects.filter(
-                user=user, category=b.category, date__month=current_month, date__year=current_year
+                user=user, category=b.category, date__gte=start_date_filter, date__lte=end_date_filter
             ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
             if b.budget_amount > 0:
                 pct = (actual / b.budget_amount) * 100
